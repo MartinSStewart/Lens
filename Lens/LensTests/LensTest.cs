@@ -2,6 +2,7 @@
 using NUnit.Framework;
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Linq;
 using System.Text;
@@ -30,6 +31,8 @@ namespace LensTests
         {
             public int P { get; private set; }
             public C C { get; private set; }
+            public ImmutableList<int> Numbers { get; private set; } = new[] { 1, 2, 3, 4 }.ToImmutableList();
+            public ImmutableList<C> Cs { get; private set; } = new[] { new C(), new C(), new C() }.ToImmutableList();
             public B(int p = 0, C c = null)
             {
                 P = p;
@@ -58,7 +61,29 @@ namespace LensTests
         {
             public double Value { get; private set; }
 
+            public MultiIndexer MultiIndexer { get; private set; } = new MultiIndexer();
+
             public bool IsValid() => Value >= 0;
+        }
+
+        class MultiIndexer : IState
+        {
+            private ImmutableList<double> _numberArray = new[] { 10.0 }.ToImmutableList();
+            private ImmutableDictionary<string, A> _stringDictionary = ImmutableDictionary<string, A>.Empty;
+
+            public double this[int index]
+            {
+                get => _numberArray[index];
+                private set => _numberArray = _numberArray.SetItem(index, value);
+            }
+
+            public A this[string index]
+            {
+                get => _stringDictionary[index];
+                private set => _stringDictionary = _stringDictionary.SetItem(index, value);
+            }
+
+            public bool IsValid() => true;
         }
 
         [Test]
@@ -134,6 +159,50 @@ namespace LensTests
         public void LensChecksIsValidForIState()
         {
             Assert.Throws<DebugExException>(() => new D().Set(p => p.E.Value, -1));
+        }
+
+        [Test]
+        public void LensCanSetIndex0()
+        {
+            var a = new MultiIndexer();
+            var result = a.Set(p => p[0], 100);
+            Assert.AreEqual(100, result[0]);
+            Assert.AreEqual(10, a[0]);
+        }
+
+        [Test]
+        public void LensCanSetIndex1()
+        {
+            var a = new E();
+            var result = a.Set(p => p.MultiIndexer[0], 100);
+            Assert.AreEqual(100, result.MultiIndexer[0]);
+            Assert.AreEqual(10, a.MultiIndexer[0]);
+        }
+
+        [Test]
+        public void LensCanSetIndexWithExpression()
+        {
+            var a = new MultiIndexer();
+            var value0 = 5;
+            var value1 = 5;
+            var result = a.Set(p => p[value1 - value0], 100);
+            Assert.AreEqual(100, result[0]);
+            Assert.AreEqual(10, a[0]);
+        }
+
+        [Test]
+        public void LensCanSetPropertyInIndex()
+        {
+            var result = new B().Set(p => p.Cs[1].P, 100);
+
+            Assert.AreEqual(100, result.Cs[1].P);
+        }
+
+        [TestCase(-1)]
+        [TestCase(14)]
+        public void LensThrowsExceptionsIfIndexIsOutOfBounds(int index)
+        {
+            Assert.Throws<IndexOutOfRangeException>(() => new A().Set(p => p.B.Numbers[index], 100));
         }
 
         [Test]

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
@@ -26,14 +27,16 @@ namespace Lens
         /// <param name="memberInfo">the list of property names composing the property path</param>
         /// <param name="valueFunc">the value to assign to the property</param>
         /// <returns>A new object with the required change implemented</returns>
-        private static T _set<T, V>(this T instance, List<MemberInfo> memberInfo, Func<V, V> valueFunc)
+        private static T _set<T, V>(this T instance, List<MethodAndParameters> memberInfo, Func<V, V> valueFunc)
             where T : class
         {
 
             var member = memberInfo.First();
             var rest = memberInfo.Skip(1).ToList();
 
-            var clone = ShallowClone(instance);
+            var clone = instance.GetType().IsImplementationOf(typeof(IImmutableList<>)) ? 
+                instance : 
+                ShallowClone(instance);
 
             var value = memberInfo.Count == 1 ? 
                 valueFunc((V)GetProperty(clone, member)) : 
@@ -94,20 +97,49 @@ namespace Lens
             return newInstance;
         }
 
-        private static void SetProperty<T, V>(T instance, MemberInfo member, V value)
+        private static void SetProperty<T, V>(T instance, MethodAndParameters member, V value)
             where T : class
         {
-            ((PropertyInfo)member).SetValue(instance, value);
+            if (member.Member != null)
+            {
+                ((PropertyInfo)member.Member).SetValue(instance, value);
+            }
+            else
+            {
+                var parameterValues = member.Parameters.Select(item => item.DynamicInvoke()).ToArray();
+
+                if (!instance.GetType().IsImplementationOf(typeof(IImmutableList<>)))
+                {
+                    var setItem = instance
+                        .GetType()
+                        .GetProperties()
+                        .Single(item => item.GetIndexParameters()
+                            .Select(parameter => parameter.ParameterType)
+                            .SequenceEqual(
+                                member.Parameters
+                                    .Select(item2 => item2.Method.ReturnType)));
+
+                    setItem.SetValue(instance, value, parameterValues);
+                }
+            }
+
             if (instance is IState state)
             {
                 DebugEx.Assert(state.IsValid());
             }
         }
 
-        private static object GetProperty<T>(T instance, MemberInfo member)
+        private static object GetProperty<T>(T instance, MethodAndParameters member)
             where T : class
         {
-            return ((PropertyInfo)member).GetValue(instance);
+            if (member.Member != null)
+            {
+                return ((PropertyInfo)member.Member).GetValue(instance);
+            }
+            else
+            {
+                return member.Method.Invoke(instance, member.Parameters.Select(item => item.DynamicInvoke()).ToArray());
+            }
         }
 
         private static readonly MethodInfo _memberwiseClone = 
@@ -119,31 +151,78 @@ namespace Lens
         /// <summary>
         /// </summary>
         /// <remarks>Original code found here: https://stackoverflow.com/a/1667533 </remarks>
-        public static List<MemberInfo> GetMemberInfoChain<T, P>(Expression<Func<T, P>> expr)
+        private static List<MethodAndParameters> GetMemberInfoChain<T, P>(Expression<Func<T, P>> expr)
         {
-            MemberExpression me;
-            switch (expr.Body.NodeType)
+
+            var expressionPart = expr.Body;
+            //switch (expr.Body.NodeType)
+            //{
+            //    case ExpressionType.Convert:
+            //    case ExpressionType.ConvertChecked:
+            //        var ue = expr.Body as UnaryExpression;
+            //        expressionPart = (ue?.Operand) as MemberExpression;
+            //        break;
+            //}
+
+
+            var expressionParts = new List<MethodAndParameters>();
+            while (expressionPart != null)
             {
-                case ExpressionType.Convert:
-                case ExpressionType.ConvertChecked:
-                    var ue = expr.Body as UnaryExpression;
-                    me = (ue?.Operand) as MemberExpression;
-                    break;
-                default:
-                    me = expr.Body as MemberExpression;
-                    break;
+                MethodAndParameters methodAndParameters;
+                switch (expressionPart.NodeType)
+                {
+                    case ExpressionType.Call:
+                        var call = (MethodCallExpression)expressionPart;
+                        if (call.Method.Name == "get_Item")
+                        {
+                            methodAndParameters = new MethodAndParameters(
+                                call.Method,
+                                call.Arguments.Select(item => Expression.Lambda(item).Compile()).ToArray());
+                        }
+                        else
+                        {
+                            throw new Exception();
+                        }
+                        expressionPart = call.Object;
+                        break;
+                    case ExpressionType.MemberAccess:
+                        var member = (MemberExpression)expressionPart;
+                        methodAndParameters = new MethodAndParameters(member.Member);
+                        expressionPart = member.Expression;
+                        break;
+                    case ExpressionType.Parameter:
+                        expressionParts.Reverse();
+                        return expressionParts;
+                    default:
+                        throw new Exception();
+                }
+                
+                expressionParts.Add(methodAndParameters);
             }
 
-            var memberInfo = new List<MemberInfo>();
-            while (me != null)
+            throw new Exception();
+        }
+
+        /// <remarks>Orignal code found here: https://bradhe.wordpress.com/2010/07/27/how-to-tell-if-a-type-implements-an-interface-in-net/ </remarks>
+        public static bool IsImplementationOf(this Type baseType, Type interfaceType) =>
+            baseType.GetInterfaces().Any(item => item.Name == interfaceType.Name && item.Assembly.FullName == interfaceType.Assembly.FullName);
+
+        private class MethodAndParameters
+        {
+            public MemberInfo Member { get; }
+            public MethodInfo Method { get; }
+            public Delegate[] Parameters { get; }
+
+            public MethodAndParameters(MemberInfo member)
             {
-                var member = me.Member;
-                memberInfo.Add(member);
-                me = me.Expression as MemberExpression;
+                Member = member;
             }
 
-            memberInfo.Reverse();
-            return memberInfo;
+            public MethodAndParameters(MethodInfo method, Delegate[] parameters = null)
+            {
+                Method = method;
+                Parameters = parameters ?? new Delegate[0];
+            }
         }
     }
 
