@@ -31,20 +31,35 @@ namespace Lens
             where T : class
         {
 
-            var member = memberInfo.First();
-            var rest = memberInfo.Skip(1).ToList();
+            if (instance.GetType().IsImplementationOf(typeof(IImmutableList<>)))
+            {
+                var index = (int)memberInfo[0].Parameters[0].DynamicInvoke();
 
-            var clone = instance.GetType().IsImplementationOf(typeof(IImmutableList<>)) ? 
-                instance : 
-                ShallowClone(instance);
+                var rest = memberInfo.Skip(1).ToList();
 
-            var value = memberInfo.Count == 1 ? 
-                valueFunc((V)GetProperty(clone, member)) : 
-                GetProperty(clone, member)._set(rest, valueFunc);
+                var value = GetProperty(instance, memberInfo[0])._set(rest, valueFunc);
 
-            SetProperty(clone, member, value);
+                var setItem = instance.GetType().GetMethod("SetItem");
+                
+                var newList = setItem.Invoke(instance, new[] { index, value });
 
-            return clone;
+                return (T)newList;
+            }
+            else
+            {
+                var member = memberInfo.First();
+                var rest = memberInfo.Skip(1).ToList();
+
+                var clone = ShallowClone(instance);
+
+                var value = memberInfo.Count == 1 ?
+                    valueFunc((V)GetProperty(clone, member)) :
+                    GetProperty(clone, member)._set(rest, valueFunc);
+
+                SetProperty(clone, member, value);
+
+                return clone;
+            }
         }
 
         /// <summary>
@@ -108,19 +123,16 @@ namespace Lens
             {
                 var parameterValues = member.Parameters.Select(item => item.DynamicInvoke()).ToArray();
 
-                if (!instance.GetType().IsImplementationOf(typeof(IImmutableList<>)))
-                {
-                    var setItem = instance
-                        .GetType()
-                        .GetProperties()
-                        .Single(item => item.GetIndexParameters()
-                            .Select(parameter => parameter.ParameterType)
-                            .SequenceEqual(
-                                member.Parameters
-                                    .Select(item2 => item2.Method.ReturnType)));
+                var setItem = instance
+                    .GetType()
+                    .GetProperties()
+                    .Single(item => item.GetIndexParameters()
+                        .Select(parameter => parameter.ParameterType)
+                        .SequenceEqual(
+                            member.Parameters
+                                .Select(item2 => item2.Method.ReturnType)));
 
-                    setItem.SetValue(instance, value, parameterValues);
-                }
+                setItem.SetValue(instance, value, parameterValues);
             }
 
             if (instance is IState state)
@@ -138,7 +150,15 @@ namespace Lens
             }
             else
             {
-                return member.Method.Invoke(instance, member.Parameters.Select(item => item.DynamicInvoke()).ToArray());
+                var parameters = member.Parameters.Select(item => item.DynamicInvoke()).ToArray();
+                try
+                {
+                    return member.Method.Invoke(instance, parameters);
+                }
+                catch (TargetInvocationException e)
+                {
+                    throw e.InnerException;
+                }
             }
         }
 

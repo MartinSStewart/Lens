@@ -202,7 +202,7 @@ namespace LensTests
         [TestCase(14)]
         public void LensThrowsExceptionsIfIndexIsOutOfBounds(int index)
         {
-            Assert.Throws<IndexOutOfRangeException>(() => new A().Set(p => p.B.Numbers[index], 100));
+            Assert.Throws<ArgumentOutOfRangeException>(() => new A(b: new B()).Set(p => p.B.Numbers[index], 100));
         }
 
         [Test]
