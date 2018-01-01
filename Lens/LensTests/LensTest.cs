@@ -180,6 +180,15 @@ namespace LensTests
         }
 
         [Test]
+        public void LensCanSetIndex2()
+        {
+            var a = new E();
+            var result = a.Set(p => p.MultiIndexer[0], v => v + 1);
+            Assert.AreEqual(a.MultiIndexer[0] + 1, result.MultiIndexer[0]);
+            Assert.AreEqual(a.MultiIndexer[0], a.MultiIndexer[0]);
+        }
+
+        [Test]
         public void LensCanSetIndexWithExpression()
         {
             var a = new MultiIndexer();

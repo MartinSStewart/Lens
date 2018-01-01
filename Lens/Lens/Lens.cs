@@ -4,6 +4,7 @@ using System.Collections.Immutable;
 using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
+using System.Runtime.ExceptionServices;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -157,7 +158,9 @@ namespace Lens
                 }
                 catch (TargetInvocationException e)
                 {
-                    throw e.InnerException;
+                    // We use this instead of "throw e.InnerException" to make sure we don't lose the stack trace.
+                    ExceptionDispatchInfo.Capture(e.InnerException).Throw();
+                    return null;
                 }
             }
         }
@@ -175,15 +178,6 @@ namespace Lens
         {
 
             var expressionPart = expr.Body;
-            //switch (expr.Body.NodeType)
-            //{
-            //    case ExpressionType.Convert:
-            //    case ExpressionType.ConvertChecked:
-            //        var ue = expr.Body as UnaryExpression;
-            //        expressionPart = (ue?.Operand) as MemberExpression;
-            //        break;
-            //}
-
 
             var expressionParts = new List<MethodAndParameters>();
             while (expressionPart != null)
