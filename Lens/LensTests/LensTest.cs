@@ -145,7 +145,7 @@ namespace LensTests
         [Test]
         public void LensWithSinglePropertyChecksIsValidForIState()
         {
-            Assert.Throws<DebugExException>(() => new D().Set(p => p, new D()));
+            Assert.Throws<InvalidStateException>(() => new D().Set(p => p, new D()));
         }
 
         [Test]
@@ -158,7 +158,7 @@ namespace LensTests
         [Test]
         public void LensChecksIsValidForIState()
         {
-            Assert.Throws<DebugExException>(() => new D().Set(p => p.E.Value, -1));
+            Assert.Throws<InvalidStateException>(() => new D().Set(p => p.E.Value, -1));
         }
 
         [Test]

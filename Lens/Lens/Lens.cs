@@ -106,9 +106,9 @@ namespace Lens
                     valueFunc);
             }
 
-            if (newInstance is IState state)
+            if (newInstance is IState state && state?.IsValid() == false)
             {
-                DebugEx.Assert(state?.IsValid() != false);
+                throw new InvalidStateException(state);
             }
             return newInstance;
         }
@@ -136,9 +136,9 @@ namespace Lens
                 setItem.SetValue(instance, value, parameterValues);
             }
 
-            if (instance is IState state)
+            if (instance is IState state && !state.IsValid())
             {
-                DebugEx.Assert(state.IsValid());
+                throw new InvalidStateException(state);
             }
         }
 

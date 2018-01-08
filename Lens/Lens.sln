@@ -1,9 +1,9 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 15
-VisualStudioVersion = 15.0.27004.2010
+VisualStudioVersion = 15.0.27130.2010
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lens", "Lens\Lens.csproj", "{4718A54C-963A-43B8-B701-9AE8526E3D31}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FunctionalLens", "Lens\FunctionalLens.csproj", "{4718A54C-963A-43B8-B701-9AE8526E3D31}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LensTests", "LensTests\LensTests.csproj", "{8B585040-58FB-481A-8251-E658E222E1C0}"
 EndProject
