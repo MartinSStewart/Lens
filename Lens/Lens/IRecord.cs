@@ -7,10 +7,9 @@ using System.Threading.Tasks;
 namespace Lens
 {
     /// <summary>
-    /// An immutable record-like data structure with validation.
+    /// Represents an immutable record-like data structure.
     /// </summary>
-    public interface IState : IRecord
+    public interface IRecord
     {
-        bool IsValid();
     }
 }

@@ -200,6 +200,16 @@ namespace LensTests
         }
 
         [Test]
+        public void LensThrowsNullReferenceCorrectly()
+        {
+            var a = new A();
+
+            Assert.AreEqual(null, a.B);
+
+            Assert.Throws<NullReferenceException>(() => a.Set(p => p.B.P, 5));
+        }
+
+        [Test]
         public void LensCanSetPropertyInIndex()
         {
             var result = new B().Set(p => p.Cs[1].P, 100);
@@ -236,6 +246,51 @@ namespace LensTests
 
             var result = Benchmark.Run(() => randomActions[random.Next(randomActions.Length)].Invoke(), 1000);
             Console.WriteLine(result);
+        }
+
+        [Test]
+        public void SetManyTest0()
+        {
+            var a = new A(0, new B());
+
+            var result = a.SetMany(
+                new Pav<A, B>(p => p.B, _ => new B(5)), 
+                new Pav<A, int>(p => p.P, _ => 42));
+
+            Assert.AreEqual(0, a.P);
+            Assert.AreEqual(0, a.B.P);
+            Assert.AreEqual(42, result.P);
+            Assert.AreEqual(5, result.B.P);
+        }
+
+        [Test]
+        public void SetManyTest1()
+        {
+            var a = new A(0, new B());
+
+            var result = a.SetMany(
+                new Pav<A, A>(p => p, _ => new A(0, new B())),
+                new Pav<A, int>(p => p.P, _ => 42));
+
+            Assert.AreEqual(0, a.P);
+            Assert.AreEqual(0, a.B.P);
+            Assert.AreEqual(42, result.P);
+            Assert.AreEqual(0, result.B.P);
+        }
+
+        [Test]
+        public void SetManyTest2()
+        {
+            var a = new A(0, new B());
+
+            var result = a.SetMany(
+                new Pav<A, int>(p => p.P, _ => 42),
+                new Pav<A, A>(p => p, _ => new A(0, new B())));
+
+            Assert.AreEqual(0, a.P);
+            Assert.AreEqual(0, a.B.P);
+            Assert.AreEqual(0, result.P);
+            Assert.AreEqual(0, result.B.P);
         }
     }
 }

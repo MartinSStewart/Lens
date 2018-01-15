@@ -28,17 +28,16 @@ namespace Lens
         /// <param name="memberInfo">the list of property names composing the property path</param>
         /// <param name="valueFunc">the value to assign to the property</param>
         /// <returns>A new object with the required change implemented</returns>
-        private static T _set<T, V>(this T instance, List<MethodAndParameters> memberInfo, Func<V, V> valueFunc)
+        private static T _set<T, V>(this T instance, List<MethodAndParameters> memberInfo, Func<V, V> valueFunc, bool validate)
             where T : class
         {
+            var rest = memberInfo.Skip(1).ToList();
 
             if (instance.GetType().IsImplementationOf(typeof(IImmutableList<>)))
             {
                 var index = (int)memberInfo[0].Parameters[0].DynamicInvoke();
 
-                var rest = memberInfo.Skip(1).ToList();
-
-                var value = GetProperty(instance, memberInfo[0])._set(rest, valueFunc);
+                var value = GetProperty(instance, memberInfo[0])._set(rest, valueFunc, validate);
 
                 var setItem = instance.GetType().GetMethod("SetItem");
                 
@@ -49,15 +48,14 @@ namespace Lens
             else
             {
                 var member = memberInfo.First();
-                var rest = memberInfo.Skip(1).ToList();
 
                 var clone = ShallowClone(instance);
 
                 var value = memberInfo.Count == 1 ?
                     valueFunc((V)GetProperty(clone, member)) :
-                    GetProperty(clone, member)._set(rest, valueFunc);
+                    GetProperty(clone, member)._set(rest, valueFunc, validate);
 
-                SetProperty(clone, member, value);
+                SetProperty(clone, member, value, validate);
 
                 return clone;
             }
@@ -92,28 +90,116 @@ namespace Lens
         public static T Set<T, V>(this T instance, Expression<Func<T, V>> propertyChain, Func<V, V> valueFunc)
             where T : class, IRecord
         {
+            return _set(instance, propertyChain, valueFunc, true);
+        }
+
+        public static T Set<T, V>(this T instance, Pav<T, V> propertyAndValue)
+            where T : class, IRecord
+        {
+            return _set(instance, propertyAndValue.PropertyChain, propertyAndValue.ValueFunc, true);
+        }
+
+        private static T _set<T, V>(this T instance, Expression<Func<T, V>> propertyChain, Func<V, V> valueFunc, bool validate) 
+            where T : class, IRecord
+        {
             T newInstance;
+
+            var expression = propertyChain.Body;
+            bool isParameter = expression.NodeType == ExpressionType.Parameter;
+            while (expression.NodeType == ExpressionType.Convert || expression.NodeType == ExpressionType.ConvertChecked)
+            {
+                expression = ((UnaryExpression)expression).Operand;
+                isParameter = expression.NodeType == ExpressionType.Parameter;
+            }
+
             // If the property chain looks like p => p then we pass it directly into valueFunc.
-            if (propertyChain.Body.NodeType == ExpressionType.Parameter)
+            if (isParameter)
             {
                 // Ugly, ugly, hack to cast T into V and back.
                 newInstance = (T)(object)valueFunc((V)(object)instance);
+
+                if (newInstance is IState state && state?.IsValid() == false)
+                {
+                    throw new InvalidStateException(state);
+                }
             }
             else // Otherwise if it looks like p => p.Prop1.PropA then we do more involved stuff.
             {
                 newInstance = instance._set(
                     GetMemberInfoChain(propertyChain),
-                    valueFunc);
+                    valueFunc,
+                    validate);
             }
 
-            if (newInstance is IState state && state?.IsValid() == false)
-            {
-                throw new InvalidStateException(state);
-            }
             return newInstance;
         }
 
-        private static void SetProperty<T, V>(T instance, MethodAndParameters member, V value)
+        private static Expression<Func<T, V>> StripConverters<T, V>(Expression<Func<T, V>> propertyChain)
+        {
+            Expression expression = propertyChain.Body;
+            while (expression.NodeType == ExpressionType.Convert || expression.NodeType == ExpressionType.ConvertChecked)
+            {
+                expression = ((UnaryExpression)expression).Operand;
+            }
+            return Expression.Lambda<Func<T, V>>(expression, propertyChain.Parameters);
+        }
+
+        /// <summary>
+        /// Performs many set operations and only performs validation after they have all been completed.
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="instance">Instance to return modified copy of.</param>
+        /// <param name="changes">Collection of changes to be made. Use the <see cref="Pav{T, V}"/> implementation of <see cref="IPropertyAndValue{T}"/>.</param>
+        /// <returns></returns>
+        public static T SetMany<T>(this T instance, params IPropertyAndValue<T>[] changes)
+            where T : class, IRecord
+        {
+            var newInstance = instance;
+            foreach (var change in changes)
+            {
+                newInstance = newInstance._set(change.PropertyChain, change.ValueFunc, false);
+            }
+
+            var memberInfos = changes.Select(item => GetMemberInfoChain(item.PropertyChain));
+            foreach (var memberInfo in memberInfos)
+            {
+                instance.Validate(memberInfo);
+            }
+
+            return newInstance;
+        }
+
+        private static void Validate<T>(this T instance, List<MethodAndParameters> memberInfo) 
+            where T : class
+        {
+            if (instance is IState state && !state.IsValid())
+            {
+                throw new InvalidStateException(state);
+            }
+
+            var rest = memberInfo.Skip(1).ToList();
+
+            if (!rest.Any())
+            {
+                return;
+            }
+
+            if (instance.GetType().IsImplementationOf(typeof(IImmutableList<>)))
+            {
+                var index = (int)memberInfo[0].Parameters[0].DynamicInvoke();
+
+                GetProperty(instance, memberInfo[0]).Validate(rest);
+            }
+            else
+            {
+                var member = memberInfo.First();
+
+                GetProperty(instance, member).Validate(rest);
+
+            }
+        }
+
+        private static void SetProperty<T, V>(T instance, MethodAndParameters member, V value, bool validate)
             where T : class
         {
             if (member.Member != null)
@@ -136,7 +222,7 @@ namespace Lens
                 setItem.SetValue(instance, value, parameterValues);
             }
 
-            if (instance is IState state && !state.IsValid())
+            if (validate && instance is IState state && !state.IsValid())
             {
                 throw new InvalidStateException(state);
             }
@@ -207,6 +293,11 @@ namespace Lens
                     case ExpressionType.Parameter:
                         expressionParts.Reverse();
                         return expressionParts;
+                    case ExpressionType.Convert:
+                    case ExpressionType.ConvertChecked:
+                        var a = (UnaryExpression)expressionPart;
+                        expressionPart = a.Operand;
+                        continue;
                     default:
                         throw new Exception();
                 }
@@ -218,7 +309,7 @@ namespace Lens
         }
 
         /// <remarks>Orignal code found here: https://bradhe.wordpress.com/2010/07/27/how-to-tell-if-a-type-implements-an-interface-in-net/ </remarks>
-        public static bool IsImplementationOf(this Type baseType, Type interfaceType) =>
+        private static bool IsImplementationOf(this Type baseType, Type interfaceType) =>
             baseType.GetInterfaces().Any(item => item.Name == interfaceType.Name && item.Assembly.FullName == interfaceType.Assembly.FullName);
 
         private class MethodAndParameters
@@ -238,12 +329,5 @@ namespace Lens
                 Parameters = parameters ?? new Delegate[0];
             }
         }
-    }
-
-    /// <summary>
-    /// Represents an immutable type.
-    /// </summary>
-    public interface IRecord
-    {
     }
 }
