@@ -37,7 +37,16 @@ namespace Lens
             {
                 var index = (int)memberInfo[0].Parameters[0].DynamicInvoke();
 
-                var value = GetProperty(instance, memberInfo[0])._set(rest, valueFunc, validate);
+                object value;
+                if (memberInfo.Count == 1)
+                {
+                    value = valueFunc((V)GetProperty(instance, memberInfo[0]));
+                }
+                else
+                {
+                    value = GetProperty(instance, memberInfo[0])._set(rest, valueFunc, validate);
+                }
+                
 
                 var setItem = instance.GetType().GetMethod("SetItem");
                 

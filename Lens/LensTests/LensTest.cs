@@ -189,6 +189,38 @@ namespace LensTests
         }
 
         [Test]
+        public void LensSetIndex3()
+        {
+            var b = new B().Set(p => p.Numbers, new[] { 0, 1, 2 }.ToImmutableList());
+
+            var index = 0;
+
+            b = b.Set(p => p.Numbers[index], v => v + 100);
+
+            index = 1;
+
+            b = b.Set(p => p.Numbers[index], v => v + 100);
+
+            Assert.AreEqual(new[] { 100, 101, 2 }.ToImmutableList(), b.Numbers);
+        }
+
+        [Test]
+        public void LensSetIndex4()
+        {
+            var b = new B().Set(p => p.Cs, new[] { new C(0), new C(1), new C(2) }.ToImmutableList());
+
+            var index = 0;
+
+            b = b.Set(p => p.Cs[index].P, v => v + 100);
+
+            index = 1;
+
+            b = b.Set(p => p.Cs[index].P, v => v + 100);
+
+            Assert.AreEqual(new[] { 100, 101, 2 }.ToImmutableList(), b.Cs.Select(item => item.P));
+        }
+
+        [Test]
         public void LensCanSetIndexWithExpression()
         {
             var a = new MultiIndexer();
