@@ -213,7 +213,10 @@ namespace Lens
         {
             if (member.Member != null)
             {
-                ((PropertyInfo)member.Member).SetValue(instance, value);
+                instance
+                    .GetType()
+                    .GetProperty(member.Member.Name)
+                    .SetValue(instance, value);
             }
             else
             {

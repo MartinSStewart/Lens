@@ -324,5 +324,39 @@ namespace LensTests
             Assert.AreEqual(0, result.P);
             Assert.AreEqual(0, result.B.P);
         }
+
+        public interface IThing : IRecord
+        {
+            int Value { get; }
+            string this[int index] { get; }
+        }
+
+        public class ThingImplementation : IThing
+        {
+            public string this[int index]
+            {
+                get => Texts[index];
+                private set => Texts = Texts.SetItem(index, value);
+            }
+            public ImmutableList<string> Texts { get; private set; } = new[] { "a", "b", "c" }.ToImmutableList();
+
+            public int Value { get; private set; } = 5;
+        }
+
+        [Test]
+        public void SetUsesImplementedProperty()
+        {
+            IThing thing = new ThingImplementation();
+            var result = thing.Set(p => p.Value, v => v + 1);
+            Assert.AreEqual(6, result.Value);
+        }
+
+        [Test]
+        public void SetUsesImplementedIndexer()
+        {
+            IThing thing = new ThingImplementation();
+            var result = thing.Set(p => p[1], v => v + " changed");
+            Assert.AreEqual("b changed", result[1]);
+        }
     }
 }
