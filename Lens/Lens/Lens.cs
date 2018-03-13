@@ -6,6 +6,7 @@ using System.Linq.Expressions;
 using System.Reflection;
 using System.Runtime.ExceptionServices;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Lens
@@ -16,6 +17,11 @@ namespace Lens
     /// <remarks>Original code found here: https://stackoverflow.com/a/16336563 </remarks>
     public static class Lens
     {
+        [ThreadStatic]
+        internal static bool _validationPaused;
+
+        public static bool ValidationPaused => _validationPaused;
+
         /// <summary>
         /// Perform an immutable persistent set on a sub
         /// property of the object. The object is not
@@ -127,7 +133,7 @@ namespace Lens
                 // Ugly, ugly, hack to cast T into V and back.
                 newInstance = (T)(object)valueFunc((V)(object)instance);
 
-                if (newInstance is IState state && state?.IsValid() == false)
+                if (!_validationPaused && newInstance is IState state && state?.IsValid() == false)
                 {
                     throw new InvalidStateException(state);
                 }
@@ -178,10 +184,31 @@ namespace Lens
             return newInstance;
         }
 
+        /// <summary>
+        /// Prevents <see cref="IState.IsValid"/> from being called inside <see cref="Lens.Set"/>.
+        /// </summary>
+        public static T ChangeWithoutValidation<T>(this T instance, Func<T, T> changes, Action<T> validate = null) 
+            where T : class
+        {
+            var previousValidation = _validationPaused;
+            _validationPaused = true;
+            try
+            {
+                var newInstance = changes?.Invoke(instance);
+                _validationPaused = previousValidation;
+                validate?.Invoke(newInstance);
+                return newInstance;
+            }
+            finally
+            {
+                _validationPaused = previousValidation;
+            }
+        }
+
         private static void Validate<T>(this T instance, List<MethodAndParameters> memberInfo) 
             where T : class
         {
-            if (instance is IState state && !state.IsValid())
+            if (!_validationPaused && instance is IState state && !state.IsValid())
             {
                 throw new InvalidStateException(state);
             }
@@ -234,7 +261,7 @@ namespace Lens
                 setItem.SetValue(instance, value, parameterValues);
             }
 
-            if (validate && instance is IState state && !state.IsValid())
+            if (!_validationPaused && validate && instance is IState state && !state.IsValid())
             {
                 throw new InvalidStateException(state);
             }

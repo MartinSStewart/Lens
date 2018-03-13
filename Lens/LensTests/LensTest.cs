@@ -358,5 +358,102 @@ namespace LensTests
             var result = thing.Set(p => p[1], v => v + " changed");
             Assert.AreEqual("b changed", result[1]);
         }
+
+        public class ValidateObject : IState
+        {
+            public int A { get; private set; }
+            public int B { get; private set; }
+
+            public bool IsValid() => A == B;
+        }
+
+        [Test]
+        public void DisableValidationTest0()
+        {
+            var validObject = new ValidateObject();
+            validObject = validObject.ChangeWithoutValidation(self => self.Set(p => p.A, 5).Set(p => p.B, 5));
+
+            Assert.IsTrue(validObject.IsValid());
+        }
+
+        [Test]
+        public void DisableValidationTest1()
+        {
+            var invalidObject = new ValidateObject();
+            invalidObject = invalidObject.ChangeWithoutValidation(self => self.Set(p => p.A, 5).Set(p => p.B, 6));
+
+            // We still don't get an exception even when validation would otherwise fail.
+            Assert.IsFalse(invalidObject.IsValid());
+        }
+
+        [Test]
+        public void DisableValidationUpdatesInstance()
+        {
+            var invalidObject = new ValidateObject();
+            invalidObject = invalidObject.ChangeWithoutValidation(self => self.Set(p => p.A, 5).Set(p => p.B, 6));
+
+            Assert.AreEqual(5, invalidObject.A);
+            Assert.AreEqual(6, invalidObject.B);
+        }
+
+        [Test]
+        public void DisableValidationRunsValidationAction()
+        {
+            var invalidObject = new ValidateObject();
+            Assert.Throws<InvalidStateException>(() => invalidObject.ChangeWithoutValidation(
+                self => self.Set(p => p.A, 5).Set(p => p.B, 6), 
+                self =>
+                {
+                    if (!self.IsValid())
+                    {
+                        throw new InvalidStateException(self);
+                    }
+                }));
+        }
+
+        [Test]
+        public void DisableValidationEnablesValidationAfterwards()
+        {
+            var invalidObject = new ValidateObject();
+            invalidObject = invalidObject.ChangeWithoutValidation(self => self.Set(p => p.A, 5).Set(p => p.B, 6));
+
+            Assert.Throws<InvalidStateException>(() => invalidObject.Set(p => p.A, 123));
+        }
+
+        [Test]
+        public void NestedDisableValidationWorks()
+        {
+            var a = new ValidateObject();
+            var c = a.ChangeWithoutValidation(
+                self =>
+                {
+                    var b = a.ChangeWithoutValidation(self2 => self2.Set(p => p.A, 5));
+                    Assert.IsTrue(Lens.Lens.ValidationPaused);
+                    return b.Set(p => p.B, 6);
+                });
+
+            Assert.IsFalse(Lens.Lens.ValidationPaused);
+            Assert.AreEqual(5, c.A);
+            Assert.AreEqual(6, c.B);
+        }
+
+        [Test]
+        public void DisableValidationWorksWithException()
+        {
+            var a = new ValidateObject();
+            try
+            {
+                a.ChangeWithoutValidation(
+                    self =>
+                    {
+                        throw new Exception();
+                    });
+            }
+            catch
+            {
+            }
+
+            Assert.IsFalse(Lens.Lens.ValidationPaused);
+        }
     }
 }
